@@ -1,0 +1,109 @@
+
+##################################### 热力图 #############################################
+
+library(maptools)
+library(sf)
+library(ggplot2)
+library(maps)
+library(mapdata)
+library(sf)
+library(raster)
+library(dplyr)
+library(spData)
+library(rgdal)
+library(ggpubr)
+library(automap)
+library(RColorBrewer)
+library(gstat)
+Diversity_PollutionIndex_order_gr2 <- read.csv("Diversity_PollutionIndex_order_gr2.csv", header = 1, row.names = 1)
+
+Diversity_PollutionIndex_order_gr2 %>% dplyr::select(Longtitude, Latitude, sit, PLI) %>% 
+  arrange( Latitude) %>% group_by(sit) %>% summarise(across(where(is.numeric), mean)) %>% 
+  dplyr::select(-sit) %>% data.frame() %>% filter(PLI<10)-> pli
+
+colnames(pli) <- c('Long', 'Latitude', 'con_vs_pho_fa1')
+data1<-SpatialPointsDataFrame(pli[,1:2],pli)
+                                                                                                                                                     
+set.seed(10011)
+aa <- autoKrige.cv(con_vs_pho_fa1~1,data1, nfold=10 ,model = "Exp")
+aa<-as.data.frame(aa$krige.cv_output)
+cor.test(aa[,3],aa[,1],method="spearman")
+plot(aa[,3],aa[,1])
+
+
+library(scales)
+Diversity_PollutionIndex_order_gr2 %>% dplyr::select(Longtitude, Latitude, sit, PLI) %>% 
+  arrange( Latitude) %>% group_by(sit) %>% summarise(across(where(is.numeric), mean)) %>% dplyr::select(-sit) %>% data.frame() %>% filter(PLI<10)-> pli
+colnames(pli) <- c('Long', 'Latitude', 'con_vs_pho_fa1')
+#全国地图
+china_map <- readOGR('D:\\typora dir\\11.R语言地图相关\\R语言做中国地图\\R语言绘制地图学习\\疫情统计地图\\china\\china-polygon.shp',stringsAsFactors=F,use_iconv = TRUE, encoding = "UTF-8")
+#china_map <- readOGR('D:\\typora dir\\热力图/bou2_4p.shp',stringsAsFactors=F,use_iconv = TRUE,   encoding = "UTF-8")
+crs(china_map) <- NA #取消投影
+china_map_sf <-  st_as_sf(china_map) #转为sf
+china_map_sf$name %>% unique()
+china_map_sf %>% dplyr::filter(!name %in% c("台湾省", "新疆维吾尔自治区","西藏自治区", '四川省','海南省', "青海省")) -> china_map_sf_sel #选择省份
+china_map_sf %>% dplyr::filter(name %in% c( "北京市", "天津市", "河北省", "山西省", "内蒙古自治区" , "辽宁省", "吉林省", "黑龙江省" ,"上海市",
+                                            "江苏省", "浙江省", "安徽省", "福建省", "江西省", "山东省", "河南省", "湖北省", "湖南省",
+                                            "广东省", "广西壮族自治区" , "重庆市",  "贵州省", "云南省","陕西省",
+                                            "甘肃省",  "宁夏回族自治区"  , "香港特别行政区", "澳门特别行政区" )) -> china_map_sf_sel
+
+china_map_sell <- as(china_map_sf_sel, "Spatial") #转为sp
+fortify(china_map_sell) 
+grid=makegrid(china_map,n=2500000 )#这个值决定点的密度
+colnames(grid)<- c('Long','Latitude')
+sp::coordinates(pli) = ~Long+Latitude
+sp::coordinates(grid) <- ~Long+Latitude
+sp::gridded(grid) <- T
+province.grid=grid[china_map_sell,] #转为国界内的
+grid<-province.grid
+#克里金插值
+set.seed(10011)
+kriging_result = autoKrige(con_vs_pho_fa1 ~1,pli, grid,model = "Exp")
+prediction_spdf = kriging_result$krige_output
+a<-coordinates(prediction_spdf)
+df2fa<-as.data.frame(cbind(a,value=prediction_spdf$var1.pred))
+#color<-brewer.pal(11, "RdYlBu")[11:1]
+ggplot()+
+  geom_polygon(data=china_map,aes(x=long,y=lat,group=group) ,fill="NA",colour="gray50")+
+  #geom_point(data=df2fa,aes(Long,Latitude,color=value),size=0.001)+
+  geom_point(data=df2fa,aes(Long, Latitude,color=value),size =0.0001)+ #如果要边界放这里
+ # scale_color_gradient2(low = "#4576b8",mid = "#fcbaa0", high = "#A50026", limits=c(0,10), breaks = c(0,5,10), midpoint= 1) +
+  scale_colour_gradientn(colours = c("#4576b8","#ffffff","#98000c"),   values = rescale(c(0,1,10)),   guide = "colorbar", limits=c(0,10), breaks=c(0,1,5,10))+ #不等梯度颜色
+  coord_map()+
+  theme_pubr(border = T, legend = "right")+xlim(c(70, 140))+
+  theme(panel.grid=element_blank())+ labs(x="Latitude (CV: r=0.591, p<0.05)", y="Longtitud", title = 'PLI') -> pli_distribution
+
+############### PLI值 ############################################
+
+PLI_CF_df %>% merge( read.csv("Diversity_PollutionIndex_order_gr.csv", header = 1, row.names = 1) %>% dplyr::select(1,Pollution_level4), by.x=0, by.y="id") -> PLI_CF_df_gr
+
+
+PLI_CF_df_gr %>% reshape2::melt() -> long_PLI_CF_df_gr
+
+library(dplyr)
+library(ggplot2)
+
+long_PLI_CF_df_gr %>%
+ ggplot() +
+ aes(x = variable, y = value, color = Pollution_level4, fill = Pollution_level4) +
+ geom_boxplot(shape = "circle", outlier.shape = NA, size=1, alpha=0.2) +
+ scale_color_manual(values = c(`1Low_pollution` = "#4576b8", `2Low_pollution` = "#98000c"), "") +
+  scale_fill_manual(values = c(`1Low_pollution` = "#4576b8", `2Low_pollution` = "#98000c"),"") +ylim(c(0,25))+
+ theme_bw(base_size = 15)+labs(x=NULL, y='PLI')+ theme(axis.text.x = element_text(colour = "black"),
+    axis.text.y = element_text(colour = "black"))  + theme(legend.position = c(0.85, 0.75)) -> PLI_cf_P
+PLI_cf_P
+
+long_PLI_CF_df_gr %>% filter(variable=="Cd") -> tmp 
+compare_means(value ~ Pollution_level4 , data=tmp, method = "t.test", p.adjust.method = "fdr")
+long_PLI_CF_df_gr %>% filter(variable=="Cu") -> tmp 
+compare_means(value ~ Pollution_level4 , data=tmp, method = "t.test", p.adjust.method = "fdr")
+long_PLI_CF_df_gr %>% filter(variable=="Pb") -> tmp 
+compare_means(value ~ Pollution_level4 , data=tmp, method = "t.test", p.adjust.method = "fdr")
+long_PLI_CF_df_gr %>% filter(variable=="Zn") -> tmp 
+compare_means(value ~ Pollution_level4 , data=tmp, method = "t.test", p.adjust.method = "fdr")
+
+
+
+
+
+
