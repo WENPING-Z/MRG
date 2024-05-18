@@ -1,0 +1,208 @@
+library(ggpubr)
+library(ggpmisc)
+library(iCAMP)
+library(ape) # read_tree
+library(tidyverse)
+library(picante)
+library(phyloseq)
+library(GUniFrac) 
+library(phyloseq)
+library(dplyr)
+
+### alpha多样性 ###############
+
+Diversity_PollutionIndex_order_gr2 <- read.csv("Diversity_PollutionIndex_order_gr2.csv", header = 1, row.names = 1)
+
+Diversity_PollutionIndex_order_gr2 %>% 
+  ggplot(aes(x=Pollution_level4 , y=Richness))+
+ # stat_summary(fun.data = mean_sdl,geom="errorbar",width=0.2 )+
+  geom_violin(mapping=aes(fill =Pollution_level4)) +
+  #  geom_violin(data=richness_all, aes(x=Habitats, fill=Habitats,y=richness),alpha= 1,cex=1.2)+   
+  geom_boxplot( color='white',width=0.05,cex=1.2, outlier.shape = NA)+
+  #stat_summary(mapping=aes(fill =Pollution_level3),fun=mean,geom = "boxplot",fun.args = list(mult=1)) +
+  scale_fill_manual(values = c('#4576b8','#98000c')) +theme_pubr(border = T, legend = "none", base_size = 15)+
+  geom_jitter(width = 0.25, fill="#ff8400", size = 3, shape = 21, alpha = 0.75) + 
+  theme(panel.background = element_rect(fill = "#fbfbfa"))+ylab(label = "Richness") + 
+  stat_compare_means(method = "t.test")+ theme(axis.text.x = element_text(vjust = 1,hjust = 1,angle = 30)) -> rich
+#显著性差异比较
+compare_means(Richness ~ Pollution_level4,  data = Diversity_PollutionIndex_order_gr2, method = "t.test")
+
+Diversity_PollutionIndex_order_gr2%>% 
+  ggplot(aes(x=Pollution_level4 , y=Shannon))+
+ # stat_summary(fun.data = mean_sdl,geom="errorbar",width=0.2 )+
+  geom_violin(mapping=aes(fill =Pollution_level4)) +
+#  geom_violin(data=richness_all, aes(x=Habitats, fill=Habitats,y=richness),alpha= 1,cex=1.2)+   
+  geom_boxplot( color='white',width=0.05,cex=1.2, outlier.shape = NA)+
+  #stat_summary(mapping=aes(fill =Pollution_level3),fun=mean,geom = "boxplot",fun.args = list(mult=1)) +
+  scale_fill_manual(values = c('#4576b8','#98000c')) +theme_pubr(border = T, legend = "none", base_size = 15)+
+  #geom_jitter(width = 0.25, fill="#ff8400", size = 3, shape = 21, alpha = 0.75) + 
+  theme(panel.background = element_rect(fill = "#fbfbfa"))+ylab(label = "Shannon index") + 
+  stat_compare_means(method = "t.test")+ theme(axis.text.x = element_text(vjust = 1,hjust = 1,angle = 30)) -> shan
+#显著性差异比较
+compare_means(Shannon ~ Pollution_level4,  data = Diversity_PollutionIndex_order_gr2, method = "t.test")
+library(patchwork)
+rich+shan
+
+### beta 多样性 ###########
+
+load("0_PLI_pollution_index.RData")
+load("1_diversity_pollutinIndex_metal.RData")
+PLI_CF_df
+
+bac %>% apply(2, FUN=function(x) x/sum(x)*100) %>% data.frame()-> bac_1
+
+bac_1 %>% filter(rowSums(.) >0.01)  -> bac_2
+bac_2$ans <- apply(bac_2,1, function(x) sum(x>0))
+
+bac_2 %>% filter(ans>4) %>% select(-ans) -> bac3
+
+#gr %>% left_join(Diversity_PollutionIndex, by = c('id'='sampleID'))  %>% mutate(sit=rep(c(1:29), each=3))-> Diversity_PollutionIndex_order_gr
+Diversity_PollutionIndex_order_gr <- read.csv("Diversity_PollutionIndex_order_gr.csv", header = 1, row.names = 1)
+bray1 <- vegdist(t(bac3), method = 'bray')
+
+# data1 <- data.frame(treatment =Diversity_PollutionIndex_order_gr$Pollution_level3, block = Diversity_PollutionIndex_order_gr$sit)
+# #anosim(dw,Diversity_PollutionIndex_order_gr$Pollution_level3)
+# rownames(data1) <- Diversity_PollutionIndex_order_gr$id
+# aPCoA(bray1~block , data1, maincov = treatment)
+
+#NMDS
+nmds_otu <- metaMDS(bray1, k =3)
+nmds_otu$stress
+a <- data.frame(nmds_otu$points)
+#anosim(bray1,Diversity_PollutionIndex_order_gr$Pollution_level3,permutations =999) %>% plot()
+adonis2(bray1~Diversity_PollutionIndex_order_gr$Pollution_level3,permutations =999)
+a
+a %>% 
+  ggplot( aes(MDS1 ,MDS3)) +
+  geom_point(aes(fill = Diversity_PollutionIndex_order_gr$Pollution_level3 ),color = 'white' ,shape=21  ,size =6 ,alpha = 1) +
+  stat_ellipse(geom = "polygon",level=0.95,linetype = 1,linewidth=1,aes(fill=Diversity_PollutionIndex_order_gr$Pollution_level3, color=Diversity_PollutionIndex_order_gr$Pollution_level3),type = "euclid",alpha=0.2,show.legend = T)+
+  #stat_ellipse(aes(color = group$group), geom = 'path', size = 1.3, alpha = 0.7, show.legend = FALSE) +	#添加置信椭圆，注意不是聚类
+  scale_fill_manual(values =c("#4576b8","#fcbaa0","#f56c42","#98000c" ), NULL) +
+  scale_color_manual(values =c("#4576b8","#fcbaa0","#f56c42","#98000c" ), NULL) +
+  # scale_fill_manual(values = c('red', 'orange', 'green3')) +
+  geom_vline(xintercept = 0, color = 'gray', linewidth = 0.5) +
+  geom_hline(yintercept = 0, color = 'gray', linewidth = 0.5) +theme_test(base_size = 15)+
+  
+  theme( plot.background = element_rect(colour = NA))+ 
+  #geom_encircle(aes(fill= nmds_gr$habs), alpha=0.2)
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_text(colour = "black")) +guides(fill='none') +labs(x = "NMDS1", y = "NMDS3") -> beta_p
+
+########## 相关性 ##########
+
+library(basicTrendline)
+
+Diversity_PollutionIndex_order_gr2  -> tmp
+
+trendline(tmp$Cu ,tmp$Richness , model="line2P", ePos.x = "topleft",  summary=TRUE, eDigit=5)
+cor.test(tmp$Cu, tmp$Richness, method = "pearson")-> speaeman_re_map
+
+ggplot(data = Diversity_PollutionIndex_order_gr2, aes(y = Richness , x = Cu))+
+  geom_point(  size= 7, fill= '#8f4431', alpha= 0.8, color='black',shape=21)+
+  #  stat_cor(aes(x = get(aa) , y = get(tail(colnames(da),1)) , label = paste(..r.label.., ..p.label.., sep = '~`,`~')), method = 'pearson', 
+  #   label.x.npc = 'left', label.y.npc = 'top', size = 6)+
+  geom_smooth(method = 'lm', formula = y~x, se = TRUE, show.legend = FALSE, color = '#ff1744', alpha=0) + 
+  #stat_poly_eq(aes(label = paste(..rr.label.., stat(p.value.label), sep = '~`,`~')),
+  #  formula = y~x, parse = TRUE, label.x.npc = 'left', label.y.npc = 'top', size = 8)+
+  theme_test(base_size = 15)+
+  labs(x=paste('Cu (mg/kg)' ,
+               "(r = ", round(speaeman_re_map$estimate,3),
+               ", P = ",round(speaeman_re_map$p.value,3),")" ,sep = ' '), y= "Richness") -> cu_rich_p
+
+cor.test(tmp$Cu, tmp$Shannon, method = "pearson")-> speaeman_re_map2
+ggplot(data = Diversity_PollutionIndex_order_gr2, aes(y = Shannon , x = Cu))+
+  geom_point(  size= 7, fill= '#6c8276', alpha= 0.8, color='black',shape=21)+
+  #  stat_cor(aes(x = get(aa) , y = get(tail(colnames(da),1)) , label = paste(..r.label.., ..p.label.., sep = '~`,`~')), method = 'pearson', 
+  #   label.x.npc = 'left', label.y.npc = 'top', size = 6)+
+  geom_smooth(method = 'lm', formula = y~x, se = TRUE, show.legend = FALSE, color = '#ff1744', alpha=0) + 
+  #stat_poly_eq(aes(label = paste(..rr.label.., stat(p.value.label), sep = '~`,`~')),
+  #  formula = y~x, parse = TRUE, label.x.npc = 'left', label.y.npc = 'top', size = 8)+
+  theme_test(base_size = 15)+
+  labs(x=paste('Cu (mg/kg)' ,"(r = ", round(speaeman_re_map2$estimate,3),", P = ",round(speaeman_re_map2$p.value,3),")" ,sep = ' '), y= "Shannon index") -> cu_shan_p
+
+######### beta多样性的相关性 ########
+
+# load
+
+# 细菌群落 ------
+load("H:/MRG文章/Analysis/8_16S/1_diversity_composition/1_farmland_otu_taxonomy.RData") # 
+otu <- t(otu) %>% as.data.frame()
+
+# 去掉列为0 
+if(any(sapply(otu,sum) == 0)) otu <- otu[,-which(sapply(otu,sum) == 0)] else otu <- otu #去除全部为0的列
+# 52823
+# 去掉行为0
+
+# 环境因子
+load("H:/MRG文章/Analysis/8_16S/1_diversity_composition/1_diversity_pollutinIndex_metal.RData")
+
+# (1) 所有的总的重金属与细菌群落结构的关系
+# a.计算所有重金属的距离
+Factor_df <- Diversity_PollutionIndex %>% select(sampleID, TImetal) %>% column_to_rownames("sampleID")
+factor_dist <- vegdist(Factor_df, method = 'bray',upper = F ,diag = T)
+
+# b.计算微生物群落的bray距离
+bray_dist <- vegdist(otu, method = 'bray',upper = F ,diag =T) 
+
+# (2) 这里是看是否有相关性，没有也没关系，最后拟合曲线有相关也行，可以看bray_dist_fa， 也可以看1-bray_dist_fa
+mantel(factor_dist, bray_dist,  method = 'pearson', permutations = 999, na.rm = TRUE) # 无显著性 0.07415 0.056
+cor.test(as.vector(as.dist(factor_dist)), as.vector(bray_dist) ,  method = 'pearson') 
+#注意两个距离矩阵的样点要对应  cor = 0.07415442 5.618e-06
+
+#环境与群落距离
+p_distance_TImetal <- cbind(data.frame(geo = as.vector(as.dist(factor_dist))) , data.frame(bray=as.vector(bray_dist)) ) %>% 
+  ggplot(aes(x = geo, y = bray))+
+  geom_point(shape = 19,colour = '#ef6c00' ,size =1.5 ,alpha = 0.5)+
+  geom_smooth(method = 'lm' ,colour = 'blue',alpha = 0,  formula=y~poly(x,2))+
+  stat_poly_eq( aes(label = paste( ..rr.label.., ..AIC.label.., ..BIC.label.., sep = "~",stat(p.value.label))), formula=y~poly(x,2),size=5)+
+  geom_smooth(method = 'lm' ,colour = 'red',alpha = 0,  formula=y~x)+
+  stat_poly_eq( aes(label = paste( ..rr.label.., ..AIC.label.., ..BIC.label.., sep = "~",stat(p.value.label))), label.y = 0.,formula=y~x,size=5)+
+  labs(y = 'Community dissimilarity' ,x = "TImetal")+
+  # stat_cor(color = 'red', label.y =0.4 ,label.x = 0 ,size =6)+
+  # stat_poly_eq(aes( label = ..eq.label.. ),colour = 'red',
+  #            formula = 'y~x',label.y =0.5,label.x =0 ,size = 6 ,parse = T) +
+  theme_test(base_size = 22,base_family = 'serif')+
+  theme(plot.subtitle = element_text(family = "serif", size = 15, colour = "gray0")) +labs(subtitle = "") + 
+  theme(axis.ticks = element_line(colour = "gray0"), axis.text = element_text(colour = "gray0"), axis.text.x = element_text(colour = "black"))+
+  # scale_x_continuous(limits = c(0,3500), breaks = c(0,700,1400,2100,2800,3500))+
+  #scale_y_continuous(limits = c(0.5,1.0), breaks = c(0.6,0.8,1.0))+
+  theme(plot.subtitle = element_text(size = 22,  face = "bold")) 
+p_distance_TImetal
+
+
+# cu ------
+load("1_diversity_pollutinIndex_metal.RData")
+
+colnames(Diversity_PollutionIndex)
+# (1) 所有的总的重金属与细菌群落结构的关系
+# a.计算所有重金属的距离
+Factor_df <- Diversity_PollutionIndex %>% select(sampleID, Cu) %>% column_to_rownames("sampleID")
+factor_dist <- vegdist(Factor_df, method = 'euclidean',upper = F ,diag = T)
+
+# b.计算微生物群落的bray距离
+bray_dist <- vegdist(otu, method = 'bray',upper = F ,diag =T) 
+
+# (2) 这里是看是否有相关性，没有也没关系，最后拟合曲线有相关也行，可以看bray_dist_fa， 也可以看1-bray_dist_fa
+mantel(factor_dist, bray_dist,  method = 'pearson', permutations = 999, na.rm = TRUE) # 无显著性 0.0415  0.221
+cor.test(as.vector(as.dist(factor_dist)), as.vector(bray_dist) ,  method = 'pearson') #注意两个距离矩阵的样点要对应  cor = 0.04149  0.01114
+
+#环境与群落距离
+p_distance_cu <- cbind(data.frame(geo = as.vector(as.dist(factor_dist))) , data.frame(bray=as.vector(bray_dist)) ) %>% 
+  ggplot(aes(x = geo, y = bray))+
+  geom_point(shape = 19,colour = '#ef6c00' ,size =1.5 ,alpha = 0.5)+
+  geom_smooth(method = 'lm' ,colour = 'blue',alpha = 0,  formula=y~poly(x,2))+
+  stat_poly_eq( aes(label = paste( ..rr.label.., ..AIC.label.., ..BIC.label.., sep = "~",stat(p.value.label))), formula=y~poly(x,2),size=5)+
+  geom_smooth(method = 'lm' ,colour = 'red',alpha = 0,  formula=y~x)+
+  stat_poly_eq( aes(label = paste( ..rr.label.., ..AIC.label.., ..BIC.label.., sep = "~",stat(p.value.label))), label.y = 0.,formula=y~x,size=5)+
+  labs(y = 'Community dissimilarity' ,x = "TImetal")+
+  # stat_cor(color = 'red', label.y =0.4 ,label.x = 0 ,size =6)+
+  # stat_poly_eq(aes( label = ..eq.label.. ),colour = 'red',
+  #            formula = 'y~x',label.y =0.5,label.x =0 ,size = 6 ,parse = T) +
+  theme_test(base_size = 22,base_family = 'serif')+
+  theme(plot.subtitle = element_text(family = "serif", size = 15, colour = "gray0")) +labs(subtitle = "") + 
+  theme(axis.ticks = element_line(colour = "gray0"), axis.text = element_text(colour = "gray0"), axis.text.x = element_text(colour = "black"))+
+  # scale_x_continuous(limits = c(0,3500), breaks = c(0,700,1400,2100,2800,3500))+
+  #scale_y_continuous(limits = c(0.5,1.0), breaks = c(0.6,0.8,1.0))+
+  theme(plot.subtitle = element_text(size = 22,  face = "bold")) 
+p_distance_cu
+
+
