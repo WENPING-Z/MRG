@@ -1,0 +1,96 @@
+
+### relative abundance ########
+
+load("2_metalRG_Phylum_df_farmland.RData")
+combined_metalRG_Phylum_farmland_df <- combined_metalRG_Phylum_farmland_df %>% filter(Phylum != "p__unknown")
+
+data_df <- combined_metalRG_Phylum_farmland_df
+
+# (1) 以不同phylum进行分类
+All_Phylum_df <- data_df %>% group_by(sampleID, Phylum) %>% summarise(DepthPG=sum(DepthPG))
+
+# (2) compute percent of phylum (这里都只是找出那些是主要的ARGtype，哪些是others)
+
+totalMRG_depth_df <- All_Phylum_df %>% 
+  group_by(sampleID) %>% 
+  summarise(DepthPG=sum(DepthPG)) %>% as.data.frame() #
+
+All_Phylum_df$totalMRG_depth <- sapply(All_Phylum_df$sampleID, 
+                                       function(x) totalMRG_depth_df$DepthPG[which(totalMRG_depth_df$sampleID == x)])
+
+All_Phylum_df$phylum_percent <- All_Phylum_df$DepthPG/All_Phylum_df$totalMRG_depth #求取单独样品中每一个genus的相对丰度
+
+# (3) MRG genus beyond top 15 are others
+Phylum_relAbund_df <- All_Phylum_df %>% group_by(Phylum) %>%
+  summarise(meanpercent=mean(phylum_percent)) %>% #这里是以样品的平均值去做比较的
+  as.data.frame() %>% 
+  arrange(desc(meanpercent))
+
+othertypes <- Phylum_relAbund_df$Phylum[11:nrow(Phylum_relAbund_df)] #将丰度10以后的ARGtype存为others(list)用于后续分析
+
+# save(Phylum_relAbund_df, othertypes, totalMRG_depth_df, file = "2_Phylumtype_ranking.Rdata")
+
+# (4) replace other Phylum with others
+All_Phylum_df$Phylum[All_Phylum_df$Phylum %in% othertypes] <- "Others"
+All_Phylum_df <- All_Phylum_df %>% group_by(sampleID, Phylum) %>%  # 将所有others合并
+  summarise(phylum_percent=sum(phylum_percent))
+
+# check
+sum(All_Phylum_df$genus_percent) # 87
+
+# # color for compound
+# 
+# spType_color_df <- cbind.data.frame(Phylum=c("Aluminum_resistance","Arsenic_resistance","Cadmium_resistance","Chromium_resistance","Cobalt_resistance",
+#                                                "Copper_resistance", "Gold_resistance", "Iron_resistance", "Lead_resistance", "Mercury_resistance",
+#                                                "Multi-metal_resistance", "Nickel_resistance", "Sodium_resistance", "Tellurium_resistance", "Zinc_resistance"),
+#                                     color=c("#E64B35FF", "#4DBBD5FF", "#00A087FF", "#3C5488FF" ,"#F39B7FFF",
+#                                                        "#8491B4FF", "#91D1C2FF", "#DC0000FF", "#7E6148FF", "#B09C85FF",
+#                                                        "#addd8e" ,'#ffb74d', "#388e3c","#2c7fb8","#deebf7"), 
+#                                                        stringsAsFactors=F)
+
+# # 经纬度
+# All_Phylum_df$latitude <- sapply(All_Phylum_df$sampleID,
+#                                                  function(x) Farmland_location$latitude[which(Farmland_location$sampleTyple == x)])
+# # 定义因子
+# All_Phylum_df <- All_Phylum_df %>% arrange(latitude)
+# 
+# All_Phylum_df$sampleID <- factor(All_Phylum_df$sampleID, levels = unique(All_Phylum_df$sampleID))
+
+# colors <- sapply(unique(All_Phylum_df$Phylum),
+#                  function(x) spType_color_df$color[which(spType_color_df$Phylum == x)]) #两个表格匹配颜色
+
+
+All_Phylum_df$Pollution_level3 <- sapply(All_Phylum_df$sampleID, function(x)
+  DIversity_pollution_index$Pollution_level3[which(DIversity_pollution_index$sampleID == x)])
+
+All_Phylum_df$Pollution_level4 <- sapply(All_Phylum_df$sampleID, function(x)
+  DIversity_pollution_index$Pollution_level4[which(DIversity_pollution_index$sampleID == x)])
+
+All_Phylum_df$Pollution_level3 <- factor(All_Phylum_df$Pollution_level3, 
+                                                         levels = c("1Low_pollution", "2Low_pollution",
+                                                                    "3Heavy_pollution2", "4Heavy_pollution2"))
+
+All_Phylum_df <- All_Phylum_df %>% arrange(Pollution_level3, sampleID)
+All_Phylum_df$sampleID <- factor(All_Phylum_df$sampleID, levels = unique(All_Phylum_df$sampleID))
+
+
+
+
+# 
+MRG_Phylum_abundance <- ggplot(All_Phylum_df) +
+  aes(x = sampleID, y = phylum_percent, fill = Phylum) +
+  geom_col() +
+  theme_pubr(base_size = 13)+ 
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5)) +
+  xlab("") + ylab("Relative abundance (%)") +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_igv() +
+  #theme(axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black")) + 
+  theme(legend.position = "top", panel.grid = element_blank())
+
+MRG_Phylum_abundance
+
+##################### LSD ########################
+
+
+
