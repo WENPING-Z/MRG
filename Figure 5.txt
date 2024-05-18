@@ -1,0 +1,295 @@
+# 计算不同分组MRG的丰度，多样性，组成和宿主
+
+# library
+library(dplyr)
+library(data.table)
+library(gghalves)
+library(ggplot2)
+library(patchwork)
+library(ggalluvial)
+library(ggprism)
+library(ggsci)
+library(grid) # function grobTree
+
+# (1) abundance and diversity -----------
+# load
+load("H:/MRG文章/Analysis/8_16S/1_diversity_composition/Diversity_PollutionIndex.RData")
+load("H:/MRG文章/Analysis/2_abundance_diveristy_composition/1_Total_MRG_abundance_diversity.RData")
+
+Abundance_diversity_df <- DIversity_pollution_index %>% select(sampleID, DepthPG, numMRG)
+Abundance_diversity_df <- merge(Abundance_diversity_df,
+                                DIversity_pollution_index %>% select(sampleID, Pollution_level4),
+                                by="sampleID")
+
+pollution <- Abundance_diversity_df %>% filter(Pollution_level4 == "Pollution")
+mean(pollution$DepthPG)
+
+Nonpollution <- Abundance_diversity_df %>% filter(Pollution_level4 == "Non_pollution")
+mean(Nonpollution$DepthPG)
+
+
+# factor
+
+Abundance_diversity_df$Pollution_level4 <- factor(Abundance_diversity_df$Pollution_level4,levels = c("Non_pollution", "Pollution"))
+
+# plot
+
+p_abundance <- ggplot(Abundance_diversity_df %>% filter(sampleID != "JX.Fa5"),
+                      aes(x=Pollution_level4, y=DepthPG, fill=Pollution_level4, color=Pollution_level4)) +
+  scale_color_manual(values =  c('#4576b8', "#98000c")) +
+  scale_fill_manual(values =  c('#4576b8', "#98000c")) +
+  geom_half_violin(position=position_nudge(x=0.1,y=0),
+                   side='R',adjust=1,trim=F,color=NA,alpha=0.75) + 
+# side表示方位, adjust调整宽度， trim表示进行尾部数据修整，position调整位置 水平向右移动0.1
+  geom_point( #散点位置向左平移0.1 # aes(x = as.numeric(Pollution_level4)-0.1,
+               aes(y = DepthPG, color = Pollution_level4),
+             position = position_jitter(width =0.03),size = 2, shape = 20) + 
+  geom_boxplot(outlier.shape = NA, #隐藏离群点；
+               width =0.15,
+               alpha=0.7) + 
+  theme_bw(base_size = 14)+
+  ylab("Total MRG abundance (coverage /Gb)") + xlab("") +
+  theme(axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black")) +
+  theme(legend.position = "none") +
+  theme(legend.position = "none", panel.grid = element_blank()) 
+
+p_abundance
+
+with(data=Abundance_diversity_df %>% filter(sampleID != "JX.Fa5"),
+     pairwise.wilcox.test(g=Pollution_level4,x=DepthPG, p.adjust.method = 'fdr') # 0.034
+)
+
+p_diversity <- ggplot(Abundance_diversity_df %>% filter(sampleID != "JX.Fa35") %>% 
+                        filter(sampleID != "JX.Fa15") %>%
+                        filter(sampleID != "JX.Fa39") %>%
+                        filter(sampleID != "GZ.Fa10") %>%
+                        filter(sampleID != "HuN.Fa9") %>%
+                        filter(sampleID != "GZ.Fa39") ,
+                      aes(x=Pollution_level4, y=numMRG, fill=Pollution_level4, color=Pollution_level4)) +
+  scale_color_manual(values =  c('#4576b8', "#98000c")) +
+  scale_fill_manual(values =  c('#4576b8', "#98000c")) +
+  geom_half_violin(position=position_nudge(x=0.1,y=0),
+                   side='R',adjust=1,trim=F,color=NA,alpha=0.75) + 
+  # side表示方位, adjust调整宽度， trim表示进行尾部数据修整，position调整位置 水平向右移动0.1
+  geom_point(aes(color = Pollution_level4),
+             position = position_jitter(width =0.03), 
+             size =2, shape = 20)+#散点位置向左平移0.1 # aes(x = as.numeric(Pollution_level4)-0.1,
+  #   aes(y = DepthPG, color = Pollution_level4),
+  #   position = position_jitter(width =0.03),size =0.2, shape = 20) +
+  geom_boxplot(outlier.shape = NA, #隐藏离群点；
+               width =0.15,
+               alpha=0.7) +
+    theme_bw(base_size = 14) + 
+    ylab("Number of MRG subtypes") + xlab("") +
+    theme(axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black")) +
+    theme(legend.position = "none") +
+  theme(strip.background = element_rect(fill=c("#FFF6E1")))+
+  
+  theme(strip.text = element_text(size = 12,face = 'bold',colour = "#B8733A"))+
+  
+  theme(axis.text=element_text(colour='black',size=11)) +
+  theme(legend.position = "none", panel.grid = element_blank()) 
+  
+p_diversity
+
+with(data=Abundance_diversity_df  %>% filter(sampleID != "JX.Fa35") %>% 
+       filter(sampleID != "JX.Fa15") %>%
+       filter(sampleID != "JX.Fa39") %>%
+       filter(sampleID != "GZ.Fa10") %>%
+       filter(sampleID != "HuN.Fa9") %>%
+       filter(sampleID != "GZ.Fa39"),
+     pairwise.wilcox.test(g=Pollution_level4,x=numMRG, p.adjust.method = 'fdr') # 0.028
+)
+
+p_abundance + p_diversity
+
+
+pollution <- tmp %>% filter(Pollution_level4 == "Pollution")
+mean(pollution$numMRG) # 161.2969
+max(pollution$numMRG) # 202
+min(pollution$numMRG) # 128(144)
+
+Nonpollution <- tmp %>% filter(Pollution_level4 == "Non_pollution")
+mean(Nonpollution$numMRG) # 154.1667
+max(Nonpollution$numMRG) # 170
+min(Nonpollution$numMRG) # 142
+
+# (4) pcoA ---------------------------------
+
+# 
+library(reshape2)
+library(vegan)
+library(tidyverse)
+
+load("1_combined_metalByGene_removeBiocideMulticompound_farmland.RData")
+load("H:/MRG文章/Analysis/8_16S/1_diversity_composition/Diversity_PollutionIndex.RData")
+
+data_df <- combined_metalByGene_farmland_df
+data_df <- data_df %>% select(gene_name, sampleID, DepthPG)
+data_df_width <- dcast(data_df, sampleID~gene_name, value.var = "DepthPG")
+data_df_width <- data_df_width %>% column_to_rownames("sampleID") # 87 253
+
+# 查询是否存在空值
+any(is.na(data_df_width)) #查询是否存在空值 False
+# dat[is.na(data_df_width)] <- 0 #将空值填充为0
+# save(data_df_width, file = "3_combined_metalByGene_removeBiocideMulticompound_farmland_width.RData")
+
+# 去掉行为0的
+data_df_width <- data_df_width[which(rowSums(data_df_width) > 0),]
+# 去掉列为0的
+if(any(sapply(data_df_width,sum) == 0)) data_df_width <- data_df_width[,-which(sapply(data_df_width,sum) == 0)] else data_df_width <- data_df_width #去除全部为0的列
+# save(data_df_width, file = "1_combined_metalByGene_removeBiocideMulticompound_farmland.RData")
+
+# 构建分组信息
+groups_df <- DIversity_pollution_index %>% select(sampleID, Pollution_level4)
+
+# 对齐
+groups_df <-  groups_df[match(rownames(data_df_width), groups_df$sampleID),]
+dat_MRG <- data_df_width
+rownames(dat_MRG) == groups_df$sampleID # TRUE
+
+
+# analysis
+# 去掉一些没有什么人用的方法
+conditions <- cbind.data.frame(distMethods = c("bray", "bray", "manhattan", "euclidean", "clark", "kulczynski", "jaccard",  "binomial", "chord", "Hellinger","chi"),
+                               ifBinary = c(TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,NA,NA,NA),
+                               stringsAsFactors=F) #最后三个是标准化后的欧氏距离
+
+# 做组间差异显著性分析，来筛选一下画哪些PCoA图------------------------------
+
+# Hei转化
+dat_MRG <- decostand(dat_MRG, "hellinger")
+
+anosim.R <- vector("numeric",nrow(conditions)) # 建立一个空的向量，用于储存P值
+anosim.p <- vector("numeric",nrow(conditions)) # 建立一个空的向量，用于储存R值
+
+for(i in c(1:nrow(conditions))){
+  distMethod=conditions$distMethods[i]
+  ifBinary=conditions$ifBinary[i]
+  
+  if(!(distMethod %in% c("chord", "Hellinger","chi"))){
+    arg.dist <- vegdist(dat_MRG, method = distMethod, binary = ifBinary)
+    
+  }else{
+    if(distMethod == "chord"){
+      arg.st = decostand(dat_MRG, method = 'normalize') #decostand进行数据标准化
+      arg.dist <- vegdist(arg.st, 'euclidean')
+    }else if(distMethod == "Hellinger"){
+      arg.st = decostand(dat_MRG, method = 'hellinger')
+      arg.dist <- vegdist(arg.st, 'euclidean')
+    }else if(distMethod == "chi"){
+      arg.st = decostand(dat_MRG, method = 'chi.square')
+      arg.dist <- vegdist(arg.st, 'euclidean', na.rm = TRUE)
+    }
+    
+  }
+  
+  arg.ano <- with(dat_MRG, anosim(arg.dist, groups_df$Pollution_level4))
+  #summary(arg.ano)
+  anosim.R[i] <- arg.ano$statistic # R
+  anosim.p[i] <- arg.ano$signif # p
+  plot(arg.ano, col = c('#4576b8', "#98000c"), 
+       xlab = paste(distMethod,"; Binary:",ifBinary,sep = ""), ylab="")
+  
+}
+
+
+anosimQuality_df <- cbind.data.frame(conditions,anosim.R, anosim.p,stringsAsFactors=F) %>% arrange(desc(anosim.R)) # anosim.R 都很低,基本都只在0.07左右
+anosimQuality_df
+
+########################################################
+
+# 选择如下条件画PCoA ( 按euclidean分画euclidean的PCoA)
+selectedConditions <- cbind.data.frame(distMethod = c("chi"),
+                                       ifBinary=c(NA),
+                                       groupBy=c("Pollution_level4"),
+                                       stringsAsFactors=F)
+
+
+for(i in c(1:nrow(selectedConditions))){
+  
+  distMethod = selectedConditions$distMethod[i] #按Ecosystem和Geo的话前三排序都是一样的
+  ifBinary = selectedConditions$ifBinary[i]
+  GroupBy =selectedConditions$groupBy[i]
+  
+  
+  if(!(distMethod %in% c("chord", "Hellinger","chi"))){
+    arg.dist <- vegdist(dat_MRG, method = distMethod, binary = ifBinary)
+    
+  }else{
+    if(distMethod == "chord"){
+      arg.st = decostand(dat_MRG, method = 'normalize')
+      arg.dist <- vegdist(arg.st, 'euclidean')
+    }else if(distMethod == "Hellinger"){
+      arg.st = decostand(dat_MRG, method = 'hellinger')
+      arg.dist <- vegdist(arg.st, 'euclidean')
+    }else if(distMethod == "chi"){
+      arg.st = decostand(dat_MRG, method = 'chi.square')
+      arg.dist <- vegdist(arg.st, 'euclidean', na.rm = TRUE)
+    }
+  }
+  
+  pcoa <- cmdscale(arg.dist, k = (nrow(dat_MRG) - 1), eig = TRUE)
+  pcoa_eig <- pcoa$eig
+  pcoa_exp <- pcoa$eig/sum(pcoa$eig) 
+  
+  #ggplot2 作图
+  
+  #添加分组信息
+  site <- data.frame(pcoa$point)[1:2] 
+  site$name <- rownames(site)
+  #sampleInfo_df <-  sampleInfo_df[match(site$name, sampleInfo_df$sampleID),] #为了排列颜色，画图里面用
+  groups_df$sam_MGE == site$name #确定groups的排列与数据排序一致
+  
+  #前 2 轴解释量
+  pcoa1 <- paste('PCoA axis1 :', round(100*pcoa_exp[1], 2), '%')
+  pcoa2 <- paste('PCoA axis2 :', round(100*pcoa_exp[2], 2), '%')
+  
+  
+  #g="ecosystem"
+  site$group <- groups_df[,GroupBy] #color by position
+  arg.ano <- with(dat_MRG, anosim(arg.dist, groups_df[,GroupBy]))
+  #summary(arg.ano)
+  arg.ano$statistic # R
+  arg.ano$signif # p
+
+  #ggplot2 作图
+  grob1 <- grobTree(textGrob(paste("Anosim.R=",round(arg.ano$statistic, 4),
+                                   ", pvalue=",arg.ano$signif,
+                                   sep = ""), 
+                             x=0.05,  y=0.1, hjust=0, gp=gpar(col="black", fontsize=12)))
+  
+  # 
+  site_MRG <- site
+  site_MRG$group <- factor(site_MRG$group, levels = c("Non_pollution", "Pollution"))
+  
+  site_MRG <- site_MRG %>% filter(X1 < 0.5)
+  
+  p_pcoA <- ggplot(data = site_MRG, aes(X1, X2)) +
+    #geom_point(aes(fill = site_MRG$group, color = site_MRG$group),  size=5.5, alpha = 0.85) +
+    geom_jitter(aes(fill = site_MRG$group), color = "white", shape = 21, width = 0.01, height = 0.01, size=6, alpha = 1) +
+    #geom_polygon(aes( fill = group), show.legend = TRUE, alpha = 0.1)+
+    stat_ellipse(geom = "polygon",level=0.95,linetype = 1,linewidth=1,
+                 aes(fill = group, color = group),alpha = 0.1, show.legend = TRUE) + #添加置信椭圆，注意不是聚类
+    #scale_shape_manual(values = c(16, 17, 15, 3)) +
+    #scale_color_manual(values = c('#1976d2','#fdd835' ,"#d7660d" ,"#558b2f")) +
+    scale_fill_manual(values = c('#4576b8', "#98000c")) +
+    scale_color_manual(values = c('#4576b8', "#98000c")) +
+    theme(panel.grid.major = element_line(color = 'black', size = 0.2), panel.background = element_rect(color = 'black', fill = 'transparent'),
+          plot.title = element_text(hjust = 0.5), legend.position = 'right') + 
+    #scale_y_continuous(limits = c(-0.25,0.85)) +
+    #scale_x_continuous(limits = c(-0.35,0.25)) +
+    #geom_hline(yintercept = 0, color = 'gray', size = 0.5) +
+    #geom_text(data = ARGs_top, aes(label = name), color = 'black', size = 3) +    #添 top20 丰度物种标签
+    labs(x = pcoa1, y = pcoa2)+ 
+    theme(axis.text.x = element_text(vjust = 0.5, hjust=1, size = 13)) + #将X轴旋转,以及修改相关字体
+    theme_pubr(border = T, legend = "none", base_size = 13)+ 
+    theme(axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black")) + 
+    theme(legend.position = "none") +
+    #labs(subtitle = "Tailings") + 
+    annotation_custom(grob1) 
+  
+  assign(paste("PcoaP_",distMethod,"_colorBy_",GroupBy,sep = ""), p_pcoA, envir = .GlobalEnv)
+  
+}
+p_pcoA
