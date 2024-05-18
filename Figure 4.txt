@@ -1,0 +1,229 @@
+library(Hmisc)
+library(iCAMP)
+library(ape) # read_tree
+library(tidyverse)
+library(picante)
+library(phyloseq)
+library(GUniFrac) 
+library(phyloseq)
+library(dplyr)
+
+source("D:\\typora dir\\4.共线性网络\\CorrDF.R")
+
+setwd("C:\\Users\\fengsw\\Desktop\\卷卷\\Farmland_mantel\\")
+load("1_farmland_otu_taxonomy.RData")
+otu
+
+###
+otu$tmp <- "ASV"
+otu$tmp1 <- seq(1:nrow(otu))
+otu$ID <- paste(otu$tmp, otu$tmp1, sep = "")
+otu$Sequence <- row.names(otu)
+
+sequence_ID_df <- otu %>% select(ID, Sequence)
+save(sequence_ID_df, file = "sequence_ID.Rdata")
+
+
+otu_taxonomy
+low_he <- read.csv("Diversity_PollutionIndex_order_gr.csv", header = 1, row.names = 1) %>% filter(Pollution_level3 == "1Low_pollution") %>% select(id)
+low_he #21
+high_he <- read.csv("Diversity_PollutionIndex_order_gr.csv", header = 1, row.names = 1) %>% filter(!Pollution_level3 == "1Low_pollution") %>% select(id)
+high_he #66
+
+otu %>% select(contains(low_he$id)) %>% filter(rowSums(.)>0) -> low_otu
+otu %>% select(contains(high_he$id)) %>% filter(rowSums(.)>0) -> high_otu
+
+low_otu %>%  mutate(col=  apply(low_otu, 1, FUN =function(x) sum(x > 0))) %>% filter(col>5)  %>% select(-col) -> low_otu3
+occor.r_rela = rcorr(as.matrix(t(log(low_otu3+1))),type = "pearson")
+net <- CorrDF(occor.r_rela$r, occor.r_rela$P) 
+net$padj <- p.adjust(net$p, method="fdr")
+## 设置阈值
+net_padj <- net[which(abs(net$cor) >0.75),]
+net_padj <- net_padj[which(net_padj$padj < 0.001),]
+net_padj #边数量
+summary(unique(unique(net_padj$to),unique(net_padj$from))) #加起来节点数
+#write.csv(net_padj, "net_padj_low.csv")
+library(ggraph)
+library(igraph)
+igraph <- graph_from_data_frame(net_padj, direct=F)
+hist(degree(igraph))
+#节点数
+vcount(igraph) #72 195
+#边数
+ecount(igraph)
+#模块性（modularity），详见 ?cluster_fast_greedy，?modularity，有多种模型
+fc <- cluster_fast_greedy(igraph,weights =NULL)
+cbind(id=fc$names,module=fc$membership) %>% data.frame() %>% arrange(module)
+modularity_ta <- modularity(igraph, membership(fc)) 
+modularity_ta
+comps = membership(fc)
+colbar = c('#5eb6dd','#57d866','#ebbf97','#ea7775','#e863b0','#f09c1a','#396f2c','#63dbbd','#2a425b','blue')
+sort(comps) %>% table() %>% data.frame() %>% arrange(desc(Freq)) -> sort_color
+comps <- factor(comps, levels = sort_color$.)
+V(igraph)$color = colbar[comps] 
+set.seed(123)
+sub_net_layout <- layout_with_fr(igraph, niter=999,grid = 'nogrid')
+plot(igraph,main="Tailings co-occurrence network",vertex.frame.color='black',vertex.label=NA,edge.width=0.01,vertex.size=6, layout=sub_net_layout,edge.color="gray88" ,
+     edge.lty=1,edge.curved=F,margin=c(0,0,0,0)) #6:8
+## 定义一些颜色
+col_g <- "gray90"
+cols <- c("#8c384f" ,"#5ECC6D", "#5DAFD9","#A4B423", "#DC95D8" ,  "#F96C72","#5ED2BF",
+          "#DEB99B" , "#6E4821", "#C094DF" ,"#7ED1E4", "#EA9527","#326530", "#50C0C9", 
+          "#67C021" ,"#DC69AF", "#8C384F", "#30455C",  "#edfeef",  "#edf343", "red")
+## 设置网络的weight，为计算模块性做准备
+E(igraph)$correlation <- E(igraph)
+E(igraph)$dis <- abs(E(igraph)$dis)
+V(igraph)$degree <- degree(igraph)
+## 计算网络模块
+set.seed(007)
+V(igraph)$modularity <- membership(cluster_fast_greedy(igraph))
+V(igraph)$label <- V(igraph)$name
+V(igraph)$label <- NA
+modu_sort <- V(igraph)$modularity %>% table() %>% sort(decreasing = T)
+top_num <- 20
+modu_name <- names(modu_sort[1:20])
+modu_cols <- cols[1:length(modu_name)]
+names(modu_cols) <- modu_name
+V(igraph)$color <- V(igraph)$modularity
+V(igraph)$color[!(V(igraph)$color %in% modu_name)] <- col_g
+V(igraph)$color[(V(igraph)$color %in% modu_name)] <- modu_cols[match(V(igraph)$color[(V(igraph)$color %in% modu_name)],modu_name)]
+V(igraph)$frame.color <- V(igraph)$color
+E(igraph)$color <- col_g
+for ( i in modu_name){
+  col_edge <- cols[which(modu_name==i)]
+  otu_same_modu <-V(igraph)$name[which(V(igraph)$modularity==i)]
+  E(igraph)$color[(data.frame(as_edgelist(igraph))$X1 %in% otu_same_modu)&(data.frame(as_edgelist(igraph))$X2 %in% otu_same_modu)] <- col_edge
+}
+set.seed(1234)
+sub_net_layout <- layout_with_fr(igraph, niter=1999,grid = 'nogrid')
+# sub_net_layout <- layout_with_fr(igraph,niter=50, grid = "auto")
+# sub_net_layout <- layout_with_fr(igraph, weights=c(3, rep(100, ecount(igraph)-1)))
+# sub_net_layout <- layout_with_fr(igraph)
+# sub_net_layout <- layout_with_kk(igraph , kkconst = 1)
+# sub_net_layout <- layout_with_graphopt(igraph, spring.length = 0.5, charge=0.0001)
+plot(igraph,layout=sub_net_layout,edge.color = E(igraph)$color,vertex.size=4,main="Non-population")
+
+#Zi-Pi
+igraph <- graph_from_data_frame(net_padj, direct=F)
+library(microeco)
+#利用microeco包识别网络枢纽节点和模块枢纽节点
+data(dataset)#构建一个microeco网络
+t1 <- trans_network$new(dataset = dataset, cal_cor = "WGCNA", filter_thres = 0.01, cor_method = "spearman")#过滤数据并计算R
+t1$res_network <- igraph#将网络映射到microeco中
+#先要计算网络属性和网络模块
+t1$cal_network_attr()
+t1$cal_module()
+#提取各节点的拓扑属性，包括 zi 和 pi 值等
+t1$get_node_table(node_roles = T)
+net_top<- t1$res_node_table
+net_top#这里可以查看枢纽节点数据
+zipi <- t1$plot_taxa_roles(use_type = 1)
+zipi+ggpubr::theme_pubr()
+otu_taxonomy$name <- rownames(otu_taxonomy)
+net_top %>% left_join(otu_taxonomy, by='name') -> net_top_taxo
+ggplot(net_top_taxo) +
+  geom_vline(xintercept = 0.62, color="gray65", linetype=2,size=0.1) + geom_hline(yintercept = 2.5, color='gray65', linetype=2,size=0.1) +
+  geom_point(aes(x=p,y=z, fill = taxa_roles ),  color='black',shape = 21,size= 4, alpha=0.85)+ggpubr::theme_pubr(base_size = 20, border = T)+
+  #scale_shape_manual(values =c(21,22,24))+
+  scale_fill_manual(values = c('#1270ca',"green",'#ff7f00', 'gray'))+scale_color_manual(values = c('#1270ca',"green",'#ff7f00', 'gray'))+
+  labs(x='Among-module connectivity (Pi)', y='Within-module connectivity (Zi)') -> low_p
+#write.csv(net_top_taxo,"net_top_taxo_low.csv")
+#############################################################
+
+
+high_otu %>%   mutate(col=  apply(high_otu, 1, FUN =function(x) sum(x>0))) %>% filter(col>9)  %>% select(-col)  -> high_otu3
+occor.r_rela <-  Hmisc::rcorr(as.matrix(t(log(high_otu3+1))), type = "spearman")
+net <- CorrDF(occor.r_rela$r, occor.r_rela$P) 
+net$padj <- p.adjust(net$p, method="fdr")
+## 设置阈值
+net_padj <- net[which(abs(net$cor) >0.75),]
+net_padj <- net_padj[which(net_padj$padj < 0.001),]
+net_padj #边数量
+summary(unique(unique(net_padj$to),unique(net_padj$from))) #加起来节点数
+#write.csv(net_padj, "net_padj_high.csv")
+library(ggraph)
+library(igraph)
+igraph <- graph_from_data_frame(net_padj, direct=F)
+hist(degree(igraph))
+#节点数
+vcount(igraph) #72 195
+#边数
+ecount(igraph)
+#模块性（modularity），详见 ?cluster_fast_greedy，?modularity，有多种模型
+fc <- cluster_fast_greedy(igraph,weights =NULL)
+cbind(id=fc$names,module=fc$membership) %>% data.frame() %>% arrange(module)
+modularity_ta <- modularity(igraph, membership(fc)) 
+modularity_ta
+comps = membership(fc)
+colbar = c('#5eb6dd','#57d866','#ebbf97','#ea7775','#e863b0','#f09c1a','#396f2c','#63dbbd','#2a425b','blue')
+sort(comps) %>% table() %>% data.frame() %>% arrange(desc(Freq)) -> sort_color
+comps <- factor(comps, levels = sort_color$.)
+V(igraph)$color = colbar[comps] 
+set.seed(123)
+sub_net_layout <- layout_with_fr(igraph, niter=999,grid = 'nogrid')
+plot(igraph,main="Tailings co-occurrence network",vertex.frame.color='black',vertex.label=NA,edge.width=0.01,vertex.size=6, layout=sub_net_layout,edge.color="gray88" ,
+     edge.lty=1,edge.curved=F,margin=c(0,0,0,0)) #6:8
+## 定义一些颜色
+col_g <- "gray90"
+cols <- c("#8c384f" ,"#5ECC6D", "#5DAFD9","#A4B423", "#DC95D8" ,  "#F96C72","#5ED2BF",
+          "#DEB99B" , "#6E4821", "#C094DF" ,"#7ED1E4", "#EA9527","#326530", "#50C0C9", 
+          "#67C021" ,"#DC69AF", "#8C38ef", "#30455C",  "#edfeef",  "#edf343", "red")
+## 设置网络的weight，为计算模块性做准备
+E(igraph)$correlation <- E(igraph)
+E(igraph)$dis <- abs(E(igraph)$dis)
+V(igraph)$degree <- degree(igraph)
+## 计算网络模块
+set.seed(007)
+V(igraph)$modularity <- membership(cluster_fast_greedy(igraph))
+V(igraph)$label <- V(igraph)$name
+V(igraph)$label <- NA
+modu_sort <- V(igraph)$modularity %>% table() %>% sort(decreasing = T)
+top_num <- 20
+modu_name <- names(modu_sort[1:20])
+modu_cols <- cols[1:length(modu_name)]
+names(modu_cols) <- modu_name
+V(igraph)$color <- V(igraph)$modularity
+V(igraph)$color[!(V(igraph)$color %in% modu_name)] <- col_g
+V(igraph)$color[(V(igraph)$color %in% modu_name)] <- modu_cols[match(V(igraph)$color[(V(igraph)$color %in% modu_name)],modu_name)]
+V(igraph)$frame.color <- V(igraph)$color
+E(igraph)$color <- col_g
+for ( i in modu_name){
+  col_edge <- cols[which(modu_name==i)]
+  otu_same_modu <-V(igraph)$name[which(V(igraph)$modularity==i)]
+  E(igraph)$color[(data.frame(as_edgelist(igraph))$X1 %in% otu_same_modu)&(data.frame(as_edgelist(igraph))$X2 %in% otu_same_modu)] <- col_edge
+}
+set.seed(1234)
+# sub_net_layout <- layout_with_fr(igraph, niter=1999,grid = 'nogrid')
+# sub_net_layout <- layout_with_fr(igraph,niter=50, grid = "auto")
+# sub_net_layout <- layout_with_fr(igraph, weights=c(3, rep(100, ecount(igraph)-1)))
+# sub_net_layout <- layout_with_fr(igraph)
+# sub_net_layout <- layout_with_kk(igraph , kkconst = 1)
+# sub_net_layout <- layout_with_graphopt(igraph, spring.length = 0.5, charge=0.0001)
+# sub_net_layout <- layout_nicely(igraph,dim = 3)
+plot(igraph,layout=sub_net_layout, edge.color = E(igraph)$color,vertex.size=4,main="Population")
+
+#Zi-Pi+++
+igraph <- graph_from_data_frame(net_padj, direct=F)
+library(microeco)
+#利用microeco包识别网络枢纽节点和模块枢纽节点
+data(dataset)#构建一个microeco网络
+t1 <- trans_network$new(dataset = dataset, cal_cor = "WGCNA", filter_thres = 0.01, cor_method = "spearman")#过滤数据并计算R
+t1$res_network <- igraph#将网络映射到microeco中
+#先要计算网络属性和网络模块
+t1$cal_network_attr()
+t1$cal_module()
+#提取各节点的拓扑属性，包括 zi 和 pi 值等
+t1$get_node_table(node_roles = T)
+net_top<- t1$res_node_table
+net_top#这里可以查看枢纽节点数据
+zipi <- t1$plot_taxa_roles(use_type = 1)
+zipi+ggpubr::theme_pubr()
+
+net_top %>% left_join(otu_taxonomy, by='name') -> net_top_taxo
+ggplot(net_top_taxo) +
+  geom_vline(xintercept = 0.62, color="gray65", linetype=2,size=0.1) + geom_hline(yintercept = 2.5, color='gray65', linetype=2,size=0.1) +
+  geom_point(aes(x=p,y=z, fill = taxa_roles ),  color='black',shape = 21,size= 4, alpha=0.85)+ggpubr::theme_pubr(base_size = 20, border = T)+
+  #scale_shape_manual(values =c(21,22,24))+
+  scale_fill_manual(values = c("green", 'gray'))+scale_color_manual(values = c("green", 'gray'))+
+  labs(x='Among-module connectivity (Pi)', y='Within-module connectivity (Zi)') -> hig_p
+#write.csv(net_top_taxo,"net_top_taxo_high.csv")
